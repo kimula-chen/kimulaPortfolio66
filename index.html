@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台股持股追蹤表 </title>
+    <title>多帳戶持股追蹤 (5帳戶版)</title>
     
     <!-- 1. 引入圖表庫 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -56,7 +56,7 @@
         /* --- 頁籤樣式優化 --- */
         .tabs-header {
             display: flex;
-            flex-wrap: wrap; /* 允許換行，適應手機螢幕 */
+            flex-wrap: wrap; 
             gap: 5px;
             margin-bottom: 20px;
             border-bottom: 2px solid #eee;
@@ -73,8 +73,8 @@
             background-color: var(--tab-inactive-bg);
             color: #666;
             transition: all 0.2s;
-            flex-grow: 1; /* 讓按鈕平均分配寬度 */
-            max-width: 150px; /* 限制最大寬度 */
+            flex-grow: 1; 
+            max-width: 150px; 
         }
 
         .tab-btn:hover {
@@ -357,9 +357,9 @@
 <div class="container">
     <h1>📈 多帳戶持股追蹤</h1>
     
-    <!-- 新增：5個帳戶切換分頁 -->
+    <!-- 5個帳戶切換分頁 -->
     <div class="tabs-header">
-        <button class="tab-btn active" id="tab-acc1" onclick="switchAccount('acc1')">台新</button>
+        <button class="tab-btn active" id="tab-acc1" onclick="switchAccount('acc1')">台新'</button>
         <button class="tab-btn" id="tab-acc2" onclick="switchAccount('acc2')">元富</button>
         <button class="tab-btn" id="tab-acc3" onclick="switchAccount('acc3')">老爸</button>
         <button class="tab-btn" id="tab-acc4" onclick="switchAccount('acc4')">老媽</button>
@@ -419,7 +419,8 @@
         </div>
 
         <div class="position-panel">
-            <div class="position-title">💰 資金水位 (<span id="accLabel">帳戶 1</span>)</div>
+            <!-- 修改1: 刪除 (帳戶X) 文字 -->
+            <div class="position-title">💰 資金水位</div>
             
             <div class="position-row">
                 <span class="position-label">總資金</span>
@@ -447,13 +448,8 @@
                 <div class="progress-container">
                     <div class="progress-bar" id="levelProgressBar"></div>
                 </div>
+                <!-- 修改2: 刪除顏色說明，只保留公式 -->
                 <div class="formula-note">
-                    <strong>*顏色說明:</strong> 
-                    <span style="color:#e23e3e">紅:>100%</span>, 
-                    <span style="color:#f39c12">澄:80-100%</span>, 
-                    <span style="color:#f1c40f">黃:60-80%</span>, 
-                    <span style="color:#2dbd85">綠:<60%</span>
-                    <br>
                     <strong>*計算公式:</strong> (現股 + 融資/成數) / 總資金
                 </div>
             </div>
@@ -525,9 +521,9 @@
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.getElementById(`tab-${accId}`).classList.add('active');
         
-        // 2. 自動更新標題 (acc3 -> 帳戶 3)
-        const accountNum = accId.replace('acc', '');
-        document.getElementById('accLabel').innerText = `帳戶 ${accountNum}`;
+        // 2. (修改: 移除文字更新邏輯，因為 HTML 元素已刪除)
+        // const accountNum = accId.replace('acc', '');
+        // document.getElementById('accLabel').innerText = `帳戶 ${accountNum}`;
 
         // 3. 清空現有資料顯示
         stockList = [];
