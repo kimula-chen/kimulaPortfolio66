@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多帳戶持股追蹤 (5帳戶版)</title>
+    <title>多帳戶持股追蹤 (無限分頁版)</title>
     
     <!-- 1. 引入圖表庫 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -53,16 +53,18 @@
             margin-bottom: 20px;
         }
 
-        /* --- 頁籤樣式優化 --- */
+        /* --- 頁籤樣式優化 (支援橫向捲動) --- */
         .tabs-header {
             display: flex;
-            flex-wrap: wrap; 
+            overflow-x: auto;
             gap: 5px;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             border-bottom: 2px solid #eee;
             padding-bottom: 0;
+            /* 隱藏捲軸但保留功能 */
+            scrollbar-width: thin; 
         }
-
+        
         .tab-btn {
             padding: 10px 20px;
             border: none;
@@ -73,8 +75,8 @@
             background-color: var(--tab-inactive-bg);
             color: #666;
             transition: all 0.2s;
-            flex-grow: 1; 
-            max-width: 150px; 
+            white-space: nowrap; /* 防止換行 */
+            min-width: 80px;
         }
 
         .tab-btn:hover {
@@ -87,6 +89,51 @@
             padding-bottom: 12px;
             margin-bottom: -2px;
         }
+
+        .tab-add-btn {
+            background-color: #eee;
+            color: #555;
+            font-size: 18px;
+            padding: 5px 15px;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            border: none;
+        }
+        .tab-add-btn:hover { background-color: #ddd; }
+
+        /* --- 帳戶管理工具列 --- */
+        .account-tools {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 5px 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            align-items: center;
+        }
+        .account-name-display {
+            margin-right: auto;
+            font-weight: bold;
+            color: #4a90e2;
+            font-size: 1.1rem;
+        }
+        .btn-tool {
+            border: 1px solid #ccc;
+            background: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            color: #555;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-tool:hover { background: #eee; }
+        .btn-tool.delete { color: var(--btn-red); border-color: #ffcccb; }
+        .btn-tool.delete:hover { background: #fff0f0; }
+
         /* -------------------- */
 
         .input-group {
@@ -346,9 +393,8 @@
             .input-group input, .input-group select { width: 100%; box-sizing: border-box; }
             button.btn-refresh { width: 100%; margin-top: 10px; }
             .summary-box { flex-direction: column; gap: 10px; text-align: center; }
-            /* 手機版按鈕調整 */
-            .tabs-header { justify-content: center; }
-            .tab-btn { min-width: 80px; font-size: 14px; margin-bottom: 5px; }
+            .account-tools { flex-wrap: wrap; }
+            .account-name-display { width: 100%; margin-bottom: 5px; }
         }
     </style>
 </head>
@@ -357,13 +403,18 @@
 <div class="container">
     <h1>📈 多帳戶持股追蹤</h1>
     
-    <!-- 5個帳戶切換分頁 -->
-    <div class="tabs-header">
-        <button class="tab-btn active" id="tab-acc1" onclick="switchAccount('acc1')">台新</button>
-        <button class="tab-btn" id="tab-acc2" onclick="switchAccount('acc2')">元富</button>
-        <button class="tab-btn" id="tab-acc3" onclick="switchAccount('acc3')">老爸</button>
-        <button class="tab-btn" id="tab-acc4" onclick="switchAccount('acc4')">老媽</button>
-        <button class="tab-btn" id="tab-acc5" onclick="switchAccount('acc5')">二姊</button>
+    <!-- 動態帳戶分頁 -->
+    <div class="tabs-header" id="tabsContainer">
+        <!-- JS 將會在這裡產生按鈕 -->
+    </div>
+
+    <!-- 帳戶管理工具列 -->
+    <div class="account-tools" id="accountTools" style="display:none;">
+        <div class="account-name-display">
+            當前帳戶：<span id="currentAccountName">載入中...</span>
+        </div>
+        <button class="btn-tool" onclick="renameCurrentAccount()">✏️ 更名</button>
+        <button class="btn-tool delete" onclick="deleteCurrentAccount()">🗑️ 刪除此帳戶</button>
     </div>
 
     <div class="input-group">
@@ -419,7 +470,6 @@
         </div>
 
         <div class="position-panel">
-            <!-- 修改1: 刪除 (帳戶X) 文字 -->
             <div class="position-title">💰 資金水位</div>
             
             <div class="position-row">
@@ -448,7 +498,6 @@
                 <div class="progress-container">
                     <div class="progress-bar" id="levelProgressBar"></div>
                 </div>
-                <!-- 修改2: 刪除顏色說明，只保留公式 -->
                 <div class="formula-note">
                     <strong>*計算公式:</strong> (現股 + 融資/成數) / 總資金
                 </div>
@@ -492,8 +541,9 @@
     const PRICE_KEY = 'savedPrices_v1';
     const TIME_KEY = 'savedTime_v1';
     
-    // 當前帳戶ID，預設 acc1
-    let currentAccountId = 'acc1';
+    // 帳戶管理變數
+    let accountsList = []; // 儲存 {id: 'acc1', name: '台新'}
+    let currentAccountId = null;
 
     let stockList = [];
     let stockDetails = {};
@@ -509,21 +559,142 @@
         if (lastSavedTime !== '無紀錄') {
             document.getElementById('lastUpdate').innerText = `上次報價更新：${lastSavedTime}`;
         }
-        // 初始化載入帳戶1
-        switchAccount('acc1');
+        // 初始化：先載入帳戶列表
+        initAccounts();
     });
 
-    // --- 核心功能：切換 5 個帳戶 ---
+    // --- 帳戶管理核心功能 ---
+
+    async function initAccounts() {
+        if (!db) return;
+        const metaRef = db.collection("stock_app").doc("meta_data");
+        
+        try {
+            const doc = await metaRef.get();
+            if (doc.exists && doc.data().accounts) {
+                accountsList = doc.data().accounts;
+            } else {
+                // 如果第一次執行，自動遷移舊版帳戶
+                console.log("初始化帳戶列表 (Migration)");
+                accountsList = [
+                    { id: 'acc1', name: '台新' },
+                    { id: 'acc2', name: '元富' },
+                    { id: 'acc3', name: '老爸' },
+                    { id: 'acc4', name: '老媽' },
+                    { id: 'acc5', name: '二姊' }
+                ];
+                await metaRef.set({ accounts: accountsList }, { merge: true });
+            }
+            
+            renderTabs();
+            
+            // 預設選取第一個帳戶
+            if (accountsList.length > 0) {
+                switchAccount(accountsList[0].id);
+            }
+        } catch (e) {
+            console.error("讀取帳戶列表失敗", e);
+            document.getElementById('statusMsg').innerText = "讀取帳戶列表失敗";
+        }
+    }
+
+    function renderTabs() {
+        const container = document.getElementById('tabsContainer');
+        container.innerHTML = '';
+
+        accountsList.forEach(acc => {
+            const btn = document.createElement('button');
+            btn.className = 'tab-btn';
+            btn.id = `tab-${acc.id}`;
+            btn.innerText = acc.name;
+            btn.onclick = () => switchAccount(acc.id);
+            container.appendChild(btn);
+        });
+
+        // 新增按鈕
+        const addBtn = document.createElement('button');
+        addBtn.className = 'tab-add-btn';
+        addBtn.innerText = '+';
+        addBtn.title = '新增帳戶';
+        addBtn.onclick = createNewAccount;
+        container.appendChild(addBtn);
+    }
+
+    async function createNewAccount() {
+        const name = prompt("請輸入新帳戶名稱：");
+        if (!name || name.trim() === "") return;
+
+        const newId = 'acc_' + Date.now(); // 產生唯一ID
+        const newAccount = { id: newId, name: name.trim() };
+        
+        accountsList.push(newAccount);
+        await saveAccountsMeta();
+        renderTabs();
+        switchAccount(newId);
+    }
+
+    async function renameCurrentAccount() {
+        if (!currentAccountId) return;
+        const currentAcc = accountsList.find(a => a.id === currentAccountId);
+        if (!currentAcc) return;
+
+        const newName = prompt("請輸入新名稱：", currentAcc.name);
+        if (!newName || newName.trim() === "") return;
+
+        currentAcc.name = newName.trim();
+        await saveAccountsMeta();
+        renderTabs();
+        document.getElementById('currentAccountName').innerText = currentAcc.name;
+        // 保持當前 active 狀態
+        document.getElementById(`tab-${currentAccountId}`).classList.add('active');
+    }
+
+    async function deleteCurrentAccount() {
+        if (!currentAccountId) return;
+        if (accountsList.length <= 1) {
+            alert("至少需要保留一個帳戶！");
+            return;
+        }
+
+        const currentAcc = accountsList.find(a => a.id === currentAccountId);
+        if (!confirm(`確定要刪除帳戶「${currentAcc.name}」嗎？\n此動作無法復原！`)) return;
+
+        // 1. 從列表移除
+        accountsList = accountsList.filter(a => a.id !== currentAccountId);
+        
+        // 2. 儲存 Meta
+        await saveAccountsMeta();
+
+        // 3. (選擇性) 刪除實際資料庫文件，避免垃圾資料
+        db.collection("stock_app").doc("portfolio_" + currentAccountId).delete().catch(e => console.error(e));
+
+        // 4. 重繪與切換
+        renderTabs();
+        switchAccount(accountsList[0].id);
+    }
+
+    async function saveAccountsMeta() {
+        if (!db) return;
+        await db.collection("stock_app").doc("meta_data").set({ 
+            accounts: accountsList 
+        }, { merge: true });
+    }
+
+    // --- 核心功能：切換帳戶 ---
     function switchAccount(accId) {
         currentAccountId = accId;
 
-        // 1. 更新 UI 樣式
+        // 1. 更新 UI 分頁樣式
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        document.getElementById(`tab-${accId}`).classList.add('active');
-        
-        // 2. (修改: 移除文字更新邏輯，因為 HTML 元素已刪除)
-        // const accountNum = accId.replace('acc', '');
-        // document.getElementById('accLabel').innerText = `帳戶 ${accountNum}`;
+        const activeTab = document.getElementById(`tab-${accId}`);
+        if(activeTab) activeTab.classList.add('active');
+
+        // 2. 更新工具列顯示
+        const currentAcc = accountsList.find(a => a.id === accId);
+        if (currentAcc) {
+            document.getElementById('accountTools').style.display = 'flex';
+            document.getElementById('currentAccountName').innerText = currentAcc.name;
+        }
 
         // 3. 清空現有資料顯示
         stockList = [];
@@ -538,7 +709,7 @@
             unsubscribe = null;
         }
 
-        // 5. 設定新的監聽 (portfolio_acc1 ... portfolio_acc5)
+        // 5. 設定新的監聽
         if (db) {
             docRef = db.collection("stock_app").doc("portfolio_" + accId);
             
@@ -556,6 +727,7 @@
                     console.log(`帳戶 ${accId} 資料已同步`);
                     renderTable(); 
                 } else {
+                    // 若是新開的帳戶，文件可能不存在，先存一個空的
                     saveToFirebase();
                 }
             }, (error) => {
@@ -575,7 +747,7 @@
             lastUpdate: new Date().toISOString()
         }).catch((e) => {
             console.error("儲存失敗: ", e);
-            alert("儲存失敗，請檢查網路連線");
+            // alert("儲存失敗，請檢查網路連線"); // 避免過多干擾
         });
     }
 
@@ -854,7 +1026,6 @@
         statsLevel.innerText = level.toFixed(1) + '%';
         progressBar.style.width = displayLevel + '%';
         
-        // 顏色邏輯
         let barColor = '#2dbd85'; // <60% 綠
         let textColor = '#2dbd85';
 
