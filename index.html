@@ -61,7 +61,6 @@
             margin-bottom: 10px;
             border-bottom: 2px solid #eee;
             padding-bottom: 0;
-            /* 隱藏捲軸但保留功能 */
             scrollbar-width: thin; 
         }
         
@@ -75,8 +74,10 @@
             background-color: var(--tab-inactive-bg);
             color: #666;
             transition: all 0.2s;
-            white-space: nowrap; /* 防止換行 */
+            white-space: nowrap;
             min-width: 80px;
+            /* 允許被拖曳選取 */
+            user-select: none; 
         }
 
         .tab-btn:hover {
@@ -89,6 +90,14 @@
             padding-bottom: 12px;
             margin-bottom: -2px;
         }
+
+        /* --- 新增：拖曳時的樣式 --- */
+        .tab-btn.dragging {
+            opacity: 0.5;
+            background-color: #ccc;
+            transform: scale(0.95);
+        }
+        /* -------------------------- */
 
         .tab-add-btn {
             background-color: #eee;
@@ -544,6 +553,7 @@
     // 帳戶管理變數
     let accountsList = []; // 儲存 {id: 'acc1', name: '台新'}
     let currentAccountId = null;
+    let dragSrcIndex = null; // 拖曳來源的索引
 
     let stockList = [];
     let stockDetails = {};
@@ -574,7 +584,6 @@
             if (doc.exists && doc.data().accounts) {
                 accountsList = doc.data().accounts;
             } else {
-                // 如果第一次執行，自動遷移舊版帳戶
                 console.log("初始化帳戶列表 (Migration)");
                 accountsList = [
                     { id: 'acc1', name: '台新' },
@@ -598,20 +607,38 @@
         }
     }
 
+    // --- 修改：renderTabs 支援拖曳功能 ---
     function renderTabs() {
         const container = document.getElementById('tabsContainer');
         container.innerHTML = '';
 
-        accountsList.forEach(acc => {
+        // 產生可拖曳的帳戶按鈕
+        accountsList.forEach((acc, index) => {
             const btn = document.createElement('button');
             btn.className = 'tab-btn';
             btn.id = `tab-${acc.id}`;
             btn.innerText = acc.name;
             btn.onclick = () => switchAccount(acc.id);
+            
+            // 加入當前 active 判斷
+            if (currentAccountId === acc.id) {
+                btn.classList.add('active');
+            }
+
+            // --- Drag & Drop 屬性與事件 ---
+            btn.setAttribute('draggable', 'true');
+            btn.dataset.index = index; // 記錄在陣列中的位置
+
+            btn.addEventListener('dragstart', handleDragStart);
+            btn.addEventListener('dragover', handleDragOver);
+            btn.addEventListener('drop', handleDrop);
+            btn.addEventListener('dragend', handleDragEnd);
+            // -----------------------------
+
             container.appendChild(btn);
         });
 
-        // 新增按鈕
+        // 新增按鈕 (固定在最後面)
         const addBtn = document.createElement('button');
         addBtn.className = 'tab-add-btn';
         addBtn.innerText = '+';
@@ -620,6 +647,50 @@
         container.appendChild(addBtn);
     }
 
+    // --- 拖曳事件處理函數 ---
+    function handleDragStart(e) {
+        this.classList.add('dragging');
+        dragSrcIndex = Number(this.dataset.index);
+        e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function handleDragOver(e) {
+        if (e.preventDefault) {
+            e.preventDefault(); // 必要：允許 drop
+        }
+        e.dataTransfer.dropEffect = 'move';
+        return false;
+    }
+
+    function handleDrop(e) {
+        e.stopPropagation(); // 防止事件冒泡
+
+        // 取得目標按鈕 (確保是 .tab-btn)
+        const targetBtn = e.target.closest('.tab-btn');
+        if (!targetBtn) return;
+
+        const targetIndex = Number(targetBtn.dataset.index);
+
+        // 如果位置不同，則交換陣列順序
+        if (dragSrcIndex !== null && dragSrcIndex !== targetIndex) {
+            // 從陣列中取出被拖曳的項目
+            const movedItem = accountsList.splice(dragSrcIndex, 1)[0];
+            // 插入到新位置
+            accountsList.splice(targetIndex, 0, movedItem);
+
+            // 儲存新順序並重新渲染
+            saveAccountsMeta();
+            renderTabs();
+        }
+        return false;
+    }
+
+    function handleDragEnd(e) {
+        this.classList.remove('dragging');
+        dragSrcIndex = null;
+    }
+    // -------------------------
+
     async function createNewAccount() {
         const name = prompt("請輸入新帳戶名稱：");
         if (!name || name.trim() === "") return;
@@ -627,7 +698,9 @@
         const newId = 'acc_' + Date.now(); // 產生唯一ID
         const newAccount = { id: newId, name: name.trim() };
         
+        // 預設就是 push 到最後面，所以符合需求
         accountsList.push(newAccount);
+        
         await saveAccountsMeta();
         renderTabs();
         switchAccount(newId);
@@ -645,8 +718,6 @@
         await saveAccountsMeta();
         renderTabs();
         document.getElementById('currentAccountName').innerText = currentAcc.name;
-        // 保持當前 active 狀態
-        document.getElementById(`tab-${currentAccountId}`).classList.add('active');
     }
 
     async function deleteCurrentAccount() {
@@ -665,7 +736,7 @@
         // 2. 儲存 Meta
         await saveAccountsMeta();
 
-        // 3. (選擇性) 刪除實際資料庫文件，避免垃圾資料
+        // 3. 刪除實際資料庫文件
         db.collection("stock_app").doc("portfolio_" + currentAccountId).delete().catch(e => console.error(e));
 
         // 4. 重繪與切換
